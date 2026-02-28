@@ -1,0 +1,27 @@
+{
+  "name": "cc-streak",
+  "version": "1.0.0",
+  "description": "Claude Code activity streak counter. Shows your current streak, longest streak, and burnout warnings.",
+  "type": "module",
+  "bin": {
+    "cc-streak": "./cli.mjs"
+  },
+  "keywords": [
+    "claude-code",
+    "ai",
+    "productivity",
+    "streak",
+    "burnout",
+    "cli"
+  ],
+  "author": "yurukusa",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yurukusa/cc-streak.git"
+  },
+  "homepage": "https://github.com/yurukusa/cc-streak#readme"
+}
