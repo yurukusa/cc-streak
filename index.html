@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CC Streak — Your Claude Code Activity Streak</title>
+<meta name="description" content="See your Claude Code activity streak — like GitHub's contribution streak but for AI sessions. Select your ~/.claude folder. No install, no data sent anywhere.">
+<meta property="og:title" content="CC Streak — How long is your Claude Code streak?">
+<meta property="og:description" content="Current streak, longest streak, 52-day activity bar, and burnout warnings. Free, local, zero-dependency.">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d1117;color:#e6edf3;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:24px 16px}
+  .header{text-align:center;margin-bottom:32px}
+  .header h1{font-size:1.6rem;font-weight:700;color:#e6edf3;margin-bottom:6px}
+  .header p{color:#8b949e;font-size:0.9rem}
+  .pick-box{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:28px;text-align:center;max-width:560px;width:100%;margin-bottom:20px}
+  .pick-label{color:#8b949e;font-size:0.85rem;margin-bottom:16px}
+  .btn-pick{display:inline-block;background:#21262d;border:1px solid #388bfd;color:#79c0ff;padding:12px 24px;border-radius:8px;font-size:0.95rem;cursor:pointer;transition:background 0.2s;font-weight:500}
+  .btn-pick:hover{background:#2d333b}
+  .status{margin-top:14px;font-size:0.82rem;color:#8b949e;min-height:20px}
+  .status.ok{color:#3fb950}
+  .status.err{color:#f85149}
+  /* streak card */
+  .streak-card{background:#161b22;border:1px solid #30363d;border-radius:14px;padding:28px;max-width:560px;width:100%;display:none}
+  .streak-card.visible{display:block}
+  /* big streak number */
+  .streak-hero{display:flex;align-items:flex-end;gap:12px;margin-bottom:8px}
+  .streak-num{font-size:3.6rem;font-weight:900;line-height:1}
+  .streak-days{font-size:1.1rem;color:#8b949e;padding-bottom:8px}
+  .streak-emoji{font-size:2.4rem;flex-shrink:0}
+  .streak-label{font-size:0.85rem;color:#8b949e;margin-bottom:24px}
+  /* stats row */
+  .stats-row{display:flex;gap:20px;margin-bottom:24px;flex-wrap:wrap}
+  .stat-box{background:#21262d;border-radius:8px;padding:12px 16px;flex:1;min-width:120px}
+  .stat-box .n{font-size:1.4rem;font-weight:700}
+  .stat-box .l{font-size:0.75rem;color:#8b949e;margin-top:2px}
+  /* 52-day bar */
+  .bar-section{margin-bottom:20px}
+  .bar-title{font-size:0.8rem;color:#8b949e;margin-bottom:8px}
+  .bar-cells{display:flex;gap:3px;flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px}
+  .cell{width:12px;height:12px;border-radius:2px;flex-shrink:0;cursor:default}
+  .cell-empty{background:#21262d}
+  .cell-low{background:#0e4429}
+  .cell-mid{background:#006d32}
+  .cell-high{background:#26a641}
+  .cell-max{background:#39d353}
+  .bar-legend{display:flex;align-items:center;gap:4px;margin-top:6px;font-size:0.72rem;color:#8b949e}
+  .bar-legend .cell{cursor:default}
+  /* rest info */
+  .rest-info{font-size:0.82rem;color:#8b949e;margin-bottom:20px}
+  .rest-info span{color:#e6edf3}
+  /* burnout warning */
+  .burnout{border-radius:8px;padding:12px 16px;margin-bottom:20px;font-size:0.85rem;line-height:1.5}
+  .burnout.level1{background:rgba(227,179,65,0.1);border:1px solid rgba(227,179,65,0.3);color:#e3b341}
+  .burnout.level2{background:rgba(240,136,62,0.1);border:1px solid rgba(240,136,62,0.3);color:#f0883e}
+  .burnout.level3{background:rgba(248,81,73,0.12);border:1px solid rgba(248,81,73,0.3);color:#f85149}
+  /* share */
+  .share-section{border-top:1px solid #21262d;padding-top:20px}
+  .btn-share{background:#238636;color:#fff;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:0.88rem;font-weight:600;margin-right:8px;transition:background 0.2s}
+  .btn-share:hover{background:#2ea043}
+  .btn-copy{background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:10px 16px;border-radius:8px;cursor:pointer;font-size:0.88rem;transition:background 0.2s}
+  .btn-copy:hover{background:#2d333b}
+  .copy-ok{display:none;font-size:0.8rem;color:#3fb950;margin-top:8px}
+  .copy-ok.show{display:block}
+  /* footer */
+  .footer{margin-top:24px;font-size:0.78rem;color:#4b5563;text-align:center;max-width:520px}
+  .footer a{color:#6b7280;text-decoration:none}
+  .footer a:hover{color:#8b949e}
+  input[type=file]{display:none}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>CC Streak</h1>
+  <p>Your Claude Code activity streak — like GitHub's, but for AI sessions</p>
+</div>
+
+<div class="pick-box" id="pickBox">
+  <div class="pick-label">Select your <code>~/.claude</code> folder to see your streak</div>
+  <label class="btn-pick" for="folderInput">Browse My Claude Folder</label>
+  <input type="file" id="folderInput" webkitdirectory multiple accept="">
+  <div class="status" id="status">No data loaded yet</div>
+</div>
+
+<div class="streak-card" id="streakCard">
+  <div class="streak-emoji" id="streakEmoji">🔥</div>
+  <div class="streak-hero">
+    <div class="streak-num" id="streakNum">0</div>
+    <div class="streak-days">day streak</div>
+  </div>
+  <div class="streak-label" id="streakLabel">Current consecutive days with Claude Code activity</div>
+
+  <div class="stats-row">
+    <div class="stat-box">
+      <div class="n" id="longestNum">0</div>
+      <div class="l">Longest streak</div>
+    </div>
+    <div class="stat-box">
+      <div class="n" id="activeDays">0</div>
+      <div class="l">Active days</div>
+    </div>
+    <div class="stat-box">
+      <div class="n" id="restDays">0</div>
+      <div class="l">Rest days</div>
+    </div>
+  </div>
+
+  <div class="bar-section">
+    <div class="bar-title">Last 52 days</div>
+    <div class="bar-cells" id="barCells"></div>
+    <div class="bar-legend">
+      Less <div class="cell cell-empty"></div><div class="cell cell-low"></div><div class="cell cell-mid"></div><div class="cell cell-high"></div><div class="cell cell-max"></div> More
+    </div>
+  </div>
+
+  <div class="rest-info" id="restInfo"></div>
+
+  <div class="burnout" id="burnout" style="display:none"></div>
+
+  <div class="share-section">
+    <button class="btn-share" id="btnShare">Share on Twitter</button>
+    <button class="btn-copy" id="btnCopy">Copy text</button>
+    <div class="copy-ok" id="copyOk">Copied!</div>
+  </div>
+</div>
+
+<div class="footer">
+  <a href="https://yurukusa.github.io/cc-toolkit/">← All 27 cc-toolkit tools</a> ·
+  <a href="https://github.com/yurukusa/cc-streak">GitHub</a> ·
+  No data leaves your machine
+</div>
+
+<script>
+// ── File reading helpers ──────────────────────────────────────────────────────
+async function _readFirstLast(file) {
+  const CHUNK = 4096;
+  const size = file.size;
+  if (size === 0) return { first: '', last: '' };
+
+  const dec = new TextDecoder('utf-8', { fatal: false });
+
+  // First line
+  const headBuf = await file.slice(0, Math.min(CHUNK, size)).arrayBuffer();
+  const headText = dec.decode(new Uint8Array(headBuf));
+  const firstNl = headText.indexOf('\n');
+  const first = firstNl >= 0 ? headText.slice(0, firstNl) : headText;
+
+  // Last line
+  const tailBuf = await file.slice(Math.max(0, size - CHUNK)).arrayBuffer();
+  const tailText = dec.decode(new Uint8Array(tailBuf));
+  const lines = tailText.split('\n').filter(l => l.trim());
+  const last = lines.length > 0 ? lines[lines.length - 1] : first;
+
+  return { first, last };
+}
+
+function parseTimestamp(line) {
+  try {
+    const obj = JSON.parse(line);
+    return obj.timestamp ? new Date(obj.timestamp) : null;
+  } catch { return null; }
+}
+
+function toLocalDate(date) {
+  // YYYY-MM-DD in local timezone
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+// ── Main data processor ───────────────────────────────────────────────────────
+async function processDir(fileList) {
+  const byDate = {}; // date → total hours
+
+  const jsonlFiles = Array.from(fileList).filter(f => {
+    const p = f.webkitRelativePath || f.name;
+    return p.endsWith('.jsonl') && p.includes('/projects/');
+  });
+
+  if (jsonlFiles.length === 0) return null;
+
+  for (const file of jsonlFiles) {
+    const { first, last } = await _readFirstLast(file);
+    const t1 = parseTimestamp(first);
+    const t2 = parseTimestamp(last);
+    if (!t1 || !t2) continue;
+
+    const date = toLocalDate(t1);
+    const hours = (t2 - t1) / 3600000;
+    byDate[date] = (byDate[date] || 0) + Math.max(0, hours);
+  }
+
+  return byDate;
+}
+
+// ── Streak computation ────────────────────────────────────────────────────────
+function computeStreaks(byDate) {
+  const activeDates = Object.keys(byDate)
+    .filter(d => byDate[d] > 0)
+    .sort();
+
+  if (activeDates.length === 0) {
+    return { currentStreak: 0, longestStreak: 0, totalActiveDays: 0, totalRestDays: 0,
+             lastActive: null, lastRest: null, firstActive: null, streaks: [] };
+  }
+
+  const now = new Date();
+  const today = toLocalDate(now);
+  const yd = new Date(now); yd.setDate(yd.getDate() - 1);
+  const yesterday = toLocalDate(yd);
+
+  // Build streak list
+  const streaks = [];
+  let start = activeDates[0];
+  let len = 1;
+  let prev = activeDates[0];
+
+  for (let i = 1; i < activeDates.length; i++) {
+    const cur = activeDates[i];
+    const diff = (new Date(cur) - new Date(prev)) / 86400000;
+    if (diff === 1) {
+      len++;
+    } else {
+      streaks.push({ start, end: prev, length: len });
+      start = cur; len = 1;
+    }
+    prev = cur;
+  }
+  streaks.push({ start, end: prev, length: len });
+
+  // Is current streak still active?
+  const lastStreak = streaks[streaks.length - 1];
+  const currentStreak = (lastStreak.end === today || lastStreak.end === yesterday)
+    ? lastStreak.length : 0;
+  const longestStreak = Math.max(...streaks.map(s => s.length));
+
+  // Find all rest days (gaps between active days) - approximate
+  const firstD = new Date(activeDates[0]);
+  const todayD = new Date(today);
+  const totalDays = Math.round((todayD - firstD) / 86400000) + 1;
+  const totalRestDays = totalDays - activeDates.length;
+
+  // Last rest day
+  let lastRest = null;
+  for (let i = activeDates.length - 1; i >= 1; i--) {
+    const diff = (new Date(activeDates[i]) - new Date(activeDates[i - 1])) / 86400000;
+    if (diff > 1) {
+      // Gap found — last rest day is the day before activeDates[i]
+      const d = new Date(activeDates[i]);
+      d.setDate(d.getDate() - 1);
+      lastRest = toLocalDate(d);
+      break;
+    }
+  }
+  // Also check if today/yesterday is a rest day
+  if (!activeDates.includes(today) && !activeDates.includes(yesterday)) {
+    if (activeDates.includes(activeDates[activeDates.length - 1])) {
+      // Today is rest day
+      lastRest = yesterday;
+    }
+  }
+
+  return {
+    currentStreak,
+    longestStreak,
+    totalActiveDays: activeDates.length,
+    totalRestDays: Math.max(0, totalRestDays),
+    lastActive: activeDates[activeDates.length - 1],
+    lastRest,
+    firstActive: activeDates[0],
+    streaks,
+  };
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function renderBar(byDate) {
+  const cells = document.getElementById('barCells');
+  cells.innerHTML = '';
+  const today = new Date();
+  for (let i = 51; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const ds = toLocalDate(d);
+    const hours = byDate[ds] || 0;
+
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    if (hours === 0) cell.classList.add('cell-empty');
+    else if (hours < 1) cell.classList.add('cell-low');
+    else if (hours < 3) cell.classList.add('cell-mid');
+    else if (hours < 6) cell.classList.add('cell-high');
+    else cell.classList.add('cell-max');
+    cell.title = `${ds}: ${hours > 0 ? hours.toFixed(1) + 'h' : 'no activity'}`;
+    cells.appendChild(cell);
+  }
+}
+
+function renderResult(byDate) {
+  const stats = computeStreaks(byDate);
+  const today = toLocalDate(new Date());
+
+  // Burnout
+  const daysSinceRest = stats.lastRest
+    ? Math.round((new Date(today) - new Date(stats.lastRest)) / 86400000)
+    : stats.totalActiveDays;
+
+  // Emoji
+  const emoji = stats.currentStreak >= 30 ? '🔥' : stats.currentStreak >= 7 ? '⚡' : stats.currentStreak >= 1 ? '✨' : '💤';
+  document.getElementById('streakEmoji').textContent = emoji;
+  document.getElementById('streakNum').textContent = stats.currentStreak;
+
+  const labels = { 0: 'No active streak right now', 1: 'Keep going!', 7: 'One week in!', 14: 'Two weeks strong!', 30: 'One month. Impressive.', 60: 'Two months. Legendary.' };
+  let lbl = 'Current consecutive days with Claude Code activity';
+  for (const [n, l] of Object.entries(labels).sort((a,b) => b[0]-a[0])) {
+    if (stats.currentStreak >= parseInt(n)) { lbl = l; break; }
+  }
+  document.getElementById('streakLabel').textContent = lbl;
+
+  document.getElementById('longestNum').textContent = stats.longestStreak + 'd';
+  document.getElementById('activeDays').textContent = stats.totalActiveDays;
+  document.getElementById('restDays').textContent = stats.totalRestDays;
+
+  // Rest info
+  const ri = document.getElementById('restInfo');
+  if (stats.lastRest) {
+    ri.innerHTML = `Last rest day: <span>${stats.lastRest}</span> &nbsp;·&nbsp; ${daysSinceRest} days ago`;
+  } else if (stats.totalActiveDays > 0) {
+    ri.innerHTML = `<span style="color:#f85149">No rest days recorded since ${stats.firstActive}</span>`;
+  }
+
+  // Burnout
+  const b = document.getElementById('burnout');
+  if (daysSinceRest >= 60) {
+    b.style.display = 'block';
+    b.className = 'burnout level3';
+    b.textContent = `⚠ BURNOUT RISK: ${daysSinceRest} days without a break. Seriously. Take a day off. Your AI will manage.`;
+  } else if (daysSinceRest >= 30) {
+    b.style.display = 'block';
+    b.className = 'burnout level2';
+    b.textContent = `⚠ ${daysSinceRest} days without a break. Consider scheduling a rest day.`;
+  } else if (daysSinceRest >= 14) {
+    b.style.display = 'block';
+    b.className = 'burnout level1';
+    b.textContent = `ℹ ${daysSinceRest} days since last rest. You're doing well, but rest matters.`;
+  } else {
+    b.style.display = 'none';
+  }
+
+  // Bar
+  renderBar(byDate);
+
+  // Share text
+  const shareText = generateShareText(stats, daysSinceRest);
+  document.getElementById('btnShare').onclick = () => {
+    window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(shareText)}`, '_blank');
+  };
+  document.getElementById('btnCopy').onclick = () => {
+    navigator.clipboard.writeText(shareText).then(() => {
+      const el = document.getElementById('copyOk');
+      el.classList.add('show');
+      setTimeout(() => el.classList.remove('show'), 2000);
+    });
+  };
+
+  document.getElementById('streakCard').classList.add('visible');
+}
+
+function generateShareText(stats, daysSinceRest) {
+  const emoji = stats.currentStreak >= 30 ? '🔥' : stats.currentStreak >= 7 ? '⚡' : '✨';
+  let lines = [
+    `${emoji} My Claude Code streak: ${stats.currentStreak} days (longest: ${stats.longestStreak})`,
+    `${stats.totalActiveDays} active days, ${stats.totalRestDays} rest days`,
+  ];
+  if (daysSinceRest >= 14) lines.push(`Last rest: ${daysSinceRest} days ago`);
+  lines.push(`#ClaudeCode cc-streak → yurukusa.github.io/cc-streak/`);
+  return lines.join('\n');
+}
+
+// ── File input handler ────────────────────────────────────────────────────────
+document.getElementById('folderInput').addEventListener('change', async (e) => {
+  const files = e.target.files;
+  if (!files || files.length === 0) return;
+
+  const st = document.getElementById('status');
+  st.textContent = `Reading ${files.length} files...`;
+  st.className = 'status';
+
+  try {
+    const byDate = await processDir(files);
+    if (!byDate || Object.keys(byDate).length === 0) {
+      st.textContent = 'No Claude Code session data found. Make sure you selected the .claude folder.';
+      st.className = 'status err';
+      return;
+    }
+    const count = Object.keys(byDate).length;
+    st.textContent = `Loaded ${count} active days from ${files.length} files`;
+    st.className = 'status ok';
+    renderResult(byDate);
+  } catch (err) {
+    st.textContent = `Error: ${err.message}`;
+    st.className = 'status err';
+  }
+});
+</script>
+</body>
+</html>
