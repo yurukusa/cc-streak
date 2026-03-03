@@ -1,53 +1,50 @@
 # cc-streak
 
-Claude Code activity streak counter. Like GitHub streak, but for your AI sessions.
+How long can Claude Code go without an error?
 
-Shows your current streak, longest streak, and warns when you haven't taken a break in a while.
-
-## Usage
-
-```bash
-npx cc-streak
-npx cc-streak --json    # raw JSON output
 ```
+npx cc-streak
+```
+
+Measures consecutive successful tool calls between errors across all your Claude Code sessions.
 
 ## Output
 
 ```
-  cc-streak
-  ────────────────────────────────────────────────
+cc-streak — Error-Free Streaks in Claude Code
+====================================================
+Sessions: 1,994 | Streaks: 6,221 | Median: 12 | Max: 829
 
-  🔥  Current streak: 36 days
-  🏆  Longest streak: 36 days
+Streak length distribution:
+  1-2 calls  █████████░░░░░░░░░░░   16.7%  (1,036)
+  3-5        ████████░░░░░░░░░░░░   15.3%  (954)
+  6-20       ████████████████████   36.2%  (2,254)
+  21-50      ████████████░░░░░░░░   21.3%  (1,328)
+  51-100     ████░░░░░░░░░░░░░░░░    7.3%  (455)
+  101+       ██░░░░░░░░░░░░░░░░░░    3.1%  (194)
 
-  Active days: 48  Rest days: 3
-  Last rest day: 2026-01-24  (36 days ago)
+Stats: median 12 | mean 22.3 | p90 52 | p99 161 | max 829
 
-  Last 52 days:
-  ··▪▪▪▪▪▪▪·▪▪▪▪▪··▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪
-  · = no activity  ▪ = active
+Streak breakers (which tool ends the run):
+  Bash                 ████████████████████   51.5%  (3,358)
+  Read                 █████████░░░░░░░░░░░   24.0%  (1,562)
+  Edit                 ████░░░░░░░░░░░░░░░░    9.5%  (617)
+  WebFetch             ██░░░░░░░░░░░░░░░░░░    5.8%  (380)
 
-  ⚠ 36 days without a break.
-     Consider scheduling a rest day.
+Longest streak per session: median 16 | p90 50 | max 829
 ```
 
-The streak bar shows the last 52 days of activity with intensity levels (cyan → yellow → orange = light → medium → heavy usage).
+## Options
 
-## Burnout warnings
+```
+npx cc-streak          # terminal output
+npx cc-streak --json   # JSON output
+```
 
-| Days without rest | Warning |
-|---|---|
-| 14+ days | ℹ info notice |
-| 30+ days | ⚠ Consider a rest day |
-| 60+ days | ⚠ BURNOUT RISK — take a day off |
+## Browser Version
 
-## Requirements
-
-- Node.js 18+
-- [`cc-agent-load`](https://www.npmjs.com/package/cc-agent-load) installed globally or in PATH
+Open [cc-streak](https://yurukusa.github.io/cc-streak/) and drop your `~/.claude/projects/` folder.
 
 ## Part of cc-toolkit
 
-This tool is part of the [cc-toolkit](https://yurukusa.github.io/cc-toolkit/) collection of Claude Code utilities.
-
-**Zero dependencies. No data sent anywhere. Runs entirely local.**
+[106 free tools for Claude Code](https://yurukusa.github.io/cc-toolkit/)

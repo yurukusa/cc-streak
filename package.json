@@ -1,18 +1,17 @@
 {
   "name": "cc-streak",
   "version": "1.0.0",
-  "description": "Claude Code activity streak counter. Shows your current streak, longest streak, and burnout warnings.",
+  "description": "How long can Claude Code go without an error? Median 12 successful tool calls between errors. Longest streak: 829. Bash breaks 52% of streaks.",
   "type": "module",
   "bin": {
     "cc-streak": "./cli.mjs"
   },
+  "scripts": {
+    "start": "node cli.mjs"
+  },
   "keywords": [
-    "claude-code",
-    "ai",
-    "productivity",
-    "streak",
-    "burnout",
-    "cli"
+    "claude", "claude-code", "anthropic", "cli", "productivity",
+    "ai", "developer-tools", "session-analysis", "streaks", "reliability"
   ],
   "author": "yurukusa",
   "license": "MIT",
@@ -21,7 +20,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/yurukusa/cc-streak.git"
+    "url": "https://github.com/yurukusa/cc-streak"
   },
-  "homepage": "https://github.com/yurukusa/cc-streak#readme"
+  "homepage": "https://yurukusa.github.io/cc-streak/"
 }

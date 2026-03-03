@@ -1,282 +1,215 @@
 #!/usr/bin/env node
-/**
- * cc-streak — Claude Code activity streak counter
- * Shows your current streak, longest streak, and burnout warnings.
- * Like GitHub streak but for Claude Code sessions.
- */
+// cc-streak — How long can Claude Code go without an error?
+// Measures consecutive successful tool calls between errors.
 
-import { execFileSync } from 'node:child_process';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { readFileSync, readdirSync, statSync } from 'fs';
+import { join, resolve } from 'path';
+import { cpus } from 'os';
 
-const HOME = homedir();
+const CONCURRENCY = Math.min(cpus().length, 8);
+const MIN_TOOLS = 3;
 
-// ── CLI args ─────────────────────────────────────────────────────────────────
-const args = process.argv.slice(2);
-const helpFlag = args.includes('--help') || args.includes('-h');
-const jsonFlag = args.includes('--json');
+// UX tools that "error" by design
+const UX_TOOLS = new Set(['ExitPlanMode', 'AskUserQuestion', 'EnterPlanMode']);
 
-if (helpFlag) {
-  console.log(`
-  cc-streak — Claude Code activity streak counter
-
-  Usage:
-    cc-streak [options]
-
-  Options:
-    --json    Print raw JSON data
-    --help    Show this help
-
-  Shows:
-    ▸ Current active streak (consecutive days with CC sessions)
-    ▸ Longest streak ever
-    ▸ Rest days (days with no activity)
-    ▸ Burnout warnings (30+ days without a break)
-
-  Data source: cc-session-stats (reads ~/.claude/projects/)
-  `);
-  process.exit(0);
-}
-
-// ── Load session stats ────────────────────────────────────────────────────────
-function loadSessionData() {
-  const paths = [
-    [join(HOME, 'bin', 'cc-session-stats'), ['--json']],
-    ['node', [join(HOME, 'projects', 'cc-loop', 'cc-session-stats', 'cli.mjs'), '--json']],
-  ];
-  for (const [cmd, cmdArgs] of paths) {
-    try {
-      const out = execFileSync(cmd, cmdArgs, { encoding: 'utf8', timeout: 30000 });
-      const json = JSON.parse(out);
-      if (json.byDate || json.dates || json.activeDates) return json;
-    } catch {}
-  }
-  return null;
-}
-
-// Try cc-agent-load as fallback (also has byDate)
-function loadAgentLoadData() {
-  const paths = [
-    [join(HOME, 'bin', 'cc-agent-load'), ['--json']],
-    ['node', [join(HOME, 'projects', 'cc-loop', 'cc-agent-load', 'cli.mjs'), '--json']],
-  ];
-  for (const [cmd, cmdArgs] of paths) {
-    try {
-      const out = execFileSync(cmd, cmdArgs, { encoding: 'utf8', timeout: 30000 });
-      const json = JSON.parse(out);
-      if (json.byDate && Object.keys(json.byDate).length > 0) return json;
-    } catch {}
-  }
-  return null;
-}
-
-// ── Compute streak stats ──────────────────────────────────────────────────────
-function computeStreaks(byDate) {
-  // Get all active dates sorted
-  const activeDates = Object.keys(byDate)
-    .filter(d => {
-      const v = byDate[d];
-      // Active = any usage (main or sub > 0)
-      const hours = typeof v === 'object' ? (v.main || 0) + (v.sub || 0) : v;
-      return hours > 0;
-    })
-    .sort();
-
-  if (activeDates.length === 0) {
-    return { currentStreak: 0, longestStreak: 0, totalActiveDays: 0, totalRestDays: 0, lastActive: null, lastRest: null, streaks: [] };
-  }
-
-  // Use local timezone date (not UTC) to match cc-agent-load's date grouping
-  const now = new Date();
-  const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-  const yesterday = new Date(now.getTime() - now.getTimezoneOffset() * 60000 - 86400000).toISOString().slice(0, 10);
-
-  // Find all streaks
+function analyzeFile(text) {
+  const toolMap = {};
+  let streak = 0;
   const streaks = [];
-  let currentStreakStart = activeDates[0];
-  let currentStreakLen = 1;
-  let prev = activeDates[0];
+  const breakers = {};
+  let totalCalls = 0;
+  let totalErrors = 0;
 
-  for (let i = 1; i < activeDates.length; i++) {
-    const cur = activeDates[i];
-    const prevDate = new Date(prev);
-    const curDate = new Date(cur);
-    const diffDays = (curDate - prevDate) / 86400000;
+  for (const line of text.split('\n')) {
+    if (!line) continue;
+    let obj;
+    try { obj = JSON.parse(line); } catch { continue; }
+    const content = (obj.message || obj).content;
+    if (!Array.isArray(content)) continue;
 
-    if (diffDays === 1) {
-      // Consecutive day
-      currentStreakLen++;
-    } else {
-      // Gap — save current streak
-      streaks.push({ start: currentStreakStart, end: prev, length: currentStreakLen });
-      currentStreakStart = cur;
-      currentStreakLen = 1;
+    for (const b of content) {
+      if (b.type === 'tool_use' && b.id && b.name) {
+        toolMap[b.id] = b.name;
+      } else if (b.type === 'tool_result') {
+        const name = toolMap[b.tool_use_id || ''] || 'unknown';
+        if (UX_TOOLS.has(name)) continue;
+        totalCalls++;
+        if (b.is_error) {
+          totalErrors++;
+          if (streak > 0) streaks.push(streak);
+          breakers[name] = (breakers[name] || 0) + 1;
+          streak = 0;
+        } else {
+          streak++;
+        }
+      }
     }
-    prev = cur;
   }
-  streaks.push({ start: currentStreakStart, end: prev, length: currentStreakLen });
+  if (streak > 0) streaks.push(streak);
 
-  // Check if current streak includes today or yesterday (still ongoing)
-  const lastStreak = streaks[streaks.length - 1];
-  const isOngoing = lastStreak.end === today || lastStreak.end === yesterday;
-  const currentStreak = isOngoing ? lastStreak.length : 0;
+  return { streaks, breakers, totalCalls, totalErrors, hasData: totalCalls >= MIN_TOOLS };
+}
 
-  const longestStreak = Math.max(...streaks.map(s => s.length));
-
-  // Rest days: days between first active and today with no sessions
-  const firstDate = new Date(activeDates[0]);
-  const todayDate = new Date(today);
-  const todayDateObj = parseDateLocal(today);
-  const firstDateObj = parseDateLocal(activeDates[0]);
-  const totalSpan = Math.round((todayDateObj - firstDateObj) / 86400000) + 1;
-  // Remove duplicate declaration above
-  const totalRestDays = totalSpan - activeDates.length;
-  const lastRest = findLastRestDay(activeDates, today);
-
-  return {
-    currentStreak,
-    longestStreak,
-    totalActiveDays: activeDates.length,
-    totalRestDays,
-    lastActive: activeDates[activeDates.length - 1],
-    lastRest,
-    streaks,
-    isOngoing,
-    firstActive: activeDates[0],
+function mergeResults(results) {
+  const merged = {
+    sessions: 0,
+    totalCalls: 0,
+    totalErrors: 0,
+    allStreaks: [],
+    breakers: {},
+    sessionLongest: [],
   };
-}
 
-function toLocalDateStr(date) {
-  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
-}
-
-function parseDateLocal(str) {
-  const [y, m, d] = str.split('-').map(Number);
-  return new Date(y, m - 1, d);
-}
-
-function findLastRestDay(activeDates, today) {
-  const activeSet = new Set(activeDates);
-  const todayDate = parseDateLocal(today);
-  const firstDate = parseDateLocal(activeDates[0]);
-
-  for (let cur = new Date(todayDate); cur >= firstDate; cur.setDate(cur.getDate() - 1)) {
-    const ds = toLocalDateStr(cur);
-    if (!activeSet.has(ds)) return ds;
-  }
-  return null;
-}
-
-// ── ANSI colors ───────────────────────────────────────────────────────────────
-const C = {
-  reset: '\x1b[0m',
-  bold: '\x1b[1m',
-  dim: '\x1b[2m',
-  cyan: '\x1b[96m',
-  yellow: '\x1b[93m',
-  green: '\x1b[92m',
-  red: '\x1b[91m',
-  orange: '\x1b[33m',
-  gray: '\x1b[90m',
-};
-
-// ── Streak visualizer (last 26 weeks as flame dots) ───────────────────────────
-function renderStreakBar(byDate, width = 52) {
-  const today = new Date();
-  const cells = [];
-
-  for (let i = width - 1; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    const ds = d.toISOString().slice(0, 10);
-    const v = byDate[ds];
-    const hours = v ? (typeof v === 'object' ? (v.main || 0) + (v.sub || 0) : v) : 0;
-
-    if (hours === 0) cells.push({ char: '·', color: C.gray });
-    else if (hours < 1) cells.push({ char: '▪', color: C.cyan });
-    else if (hours < 4) cells.push({ char: '▪', color: C.yellow });
-    else cells.push({ char: '▪', color: C.orange });
+  for (const r of results) {
+    if (!r.hasData) continue;
+    merged.sessions++;
+    merged.totalCalls += r.totalCalls;
+    merged.totalErrors += r.totalErrors;
+    merged.allStreaks.push(...r.streaks);
+    if (r.streaks.length > 0) {
+      merged.sessionLongest.push(Math.max(...r.streaks));
+    }
+    for (const [k, v] of Object.entries(r.breakers)) {
+      merged.breakers[k] = (merged.breakers[k] || 0) + v;
+    }
   }
 
-  return cells.map(c => `${c.color}${c.char}${C.reset}`).join('');
+  merged.allStreaks.sort((a, b) => a - b);
+  merged.sessionLongest.sort((a, b) => a - b);
+  return merged;
 }
 
-// ── Main ──────────────────────────────────────────────────────────────────────
-let data = loadAgentLoadData();
-if (!data) {
-  // Try cc-session-stats
-  data = loadSessionData();
+function findJsonlFiles(dir) {
+  const files = [];
+  try {
+    for (const name of readdirSync(dir)) {
+      const p = join(dir, name);
+      try {
+        const st = statSync(p);
+        if (st.isDirectory()) files.push(...findJsonlFiles(p));
+        else if (name.endsWith('.jsonl')) files.push(p);
+      } catch {}
+    }
+  } catch {}
+  return files;
 }
 
-if (!data || !data.byDate) {
-  console.error('Error: Could not load session data.');
-  console.error('Make sure cc-agent-load is installed: npm i -g cc-agent-load');
-  process.exit(1);
+async function processFiles(files) {
+  const results = [];
+  let idx = 0;
+  async function worker() {
+    while (idx < files.length) {
+      const f = files[idx++];
+      try { results.push(analyzeFile(readFileSync(f, 'utf8'))); } catch {}
+    }
+  }
+  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+  return results;
 }
 
-const stats = computeStreaks(data.byDate);
-const now = new Date();
-const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-
-// Burnout detection
-const daysSinceRest = stats.lastRest
-  ? Math.round((parseDateLocal(today) - parseDateLocal(stats.lastRest)) / 86400000)
-  : stats.totalActiveDays;
-
-const burnoutLevel = daysSinceRest >= 60 ? 3 : daysSinceRest >= 30 ? 2 : daysSinceRest >= 14 ? 1 : 0;
-
-if (jsonFlag) {
-  console.log(JSON.stringify({
-    currentStreak: stats.currentStreak,
-    longestStreak: stats.longestStreak,
-    totalActiveDays: stats.totalActiveDays,
-    totalRestDays: stats.totalRestDays,
-    lastActive: stats.lastActive,
-    lastRest: stats.lastRest,
-    daysSinceRest,
-    burnoutLevel,
-    firstActive: stats.firstActive,
-    streaks: stats.streaks,
-  }, null, 2));
-  process.exit(0);
+function bar(n, max, width = 20) {
+  const f = max > 0 ? Math.round((n / max) * width) : 0;
+  return '█'.repeat(f) + '░'.repeat(width - f);
 }
 
-// ── Terminal output ───────────────────────────────────────────────────────────
-const streakEmoji = stats.currentStreak >= 30 ? '🔥' : stats.currentStreak >= 7 ? '⚡' : stats.currentStreak >= 1 ? '✨' : '💤';
-const streakColor = stats.currentStreak >= 30 ? C.orange : stats.currentStreak >= 7 ? C.yellow : stats.currentStreak >= 1 ? C.cyan : C.gray;
-
-console.log('');
-console.log(`  ${C.bold}cc-streak${C.reset}`);
-console.log(`  ${'─'.repeat(48)}`);
-console.log('');
-console.log(`  ${streakEmoji}  Current streak: ${streakColor}${C.bold}${stats.currentStreak} days${C.reset}`);
-console.log(`  🏆  Longest streak: ${C.yellow}${stats.longestStreak} days${C.reset}`);
-console.log('');
-console.log(`  Active days: ${C.cyan}${stats.totalActiveDays}${C.reset}  Rest days: ${C.gray}${stats.totalRestDays}${C.reset}`);
-if (stats.lastRest) {
-  console.log(`  Last rest day: ${C.gray}${stats.lastRest}${C.reset}  (${daysSinceRest} days ago)`);
-} else {
-  console.log(`  ${C.red}No rest days recorded${C.reset}`);
+function pct(n, d) {
+  return d > 0 ? (n / d * 100).toFixed(1) : '0.0';
 }
-console.log('');
 
-// Streak bar
-if (data.byDate) {
-  console.log(`  Last 52 days:`);
-  console.log(`  ${renderStreakBar(data.byDate, 52)}`);
-  console.log(`  ${C.gray}· = no activity  ▪ = active${C.reset}`);
+function median(arr) {
+  if (arr.length === 0) return 0;
+  return arr[Math.floor(arr.length / 2)];
+}
+
+function percentile(arr, p) {
+  if (arr.length === 0) return 0;
+  return arr[Math.floor(arr.length * p)];
+}
+
+const TIERS = [
+  { name: 'micro', min: 1, max: 2, desc: '1-2 calls' },
+  { name: 'short', min: 3, max: 5, desc: '3-5' },
+  { name: 'medium', min: 6, max: 20, desc: '6-20' },
+  { name: 'long', min: 21, max: 50, desc: '21-50' },
+  { name: 'marathon', min: 51, max: 100, desc: '51-100' },
+  { name: 'epic', min: 101, max: Infinity, desc: '101+' },
+];
+
+function renderOutput(m, isJson) {
+  const s = m.allStreaks;
+  const med = median(s);
+  const mean = s.length > 0 ? (s.reduce((a, v) => a + v, 0) / s.length).toFixed(1) : '0';
+  const p90 = percentile(s, 0.9);
+  const p99 = percentile(s, 0.99);
+  const max = s.length > 0 ? s[s.length - 1] : 0;
+
+  const tiers = TIERS.map(t => {
+    const count = s.filter(v => v >= t.min && v <= t.max).length;
+    return { ...t, count, pct: +(pct(count, s.length)) };
+  });
+
+  const totalBreaks = Object.values(m.breakers).reduce((a, v) => a + v, 0);
+  const breakerList = Object.entries(m.breakers)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([tool, count]) => ({ tool, count, pct: +(pct(count, totalBreaks)) }));
+
+  if (isJson) {
+    console.log(JSON.stringify({
+      sessions: m.sessions,
+      totalStreaks: s.length,
+      median: med,
+      mean: +mean,
+      p90,
+      p99,
+      max,
+      tiers,
+      breakers: breakerList,
+      perSession: {
+        medianLongest: median(m.sessionLongest),
+        p90Longest: percentile(m.sessionLongest, 0.9),
+        maxLongest: m.sessionLongest.length > 0 ? m.sessionLongest[m.sessionLongest.length - 1] : 0,
+      },
+    }, null, 2));
+    return;
+  }
+
+  console.log('\ncc-streak — Error-Free Streaks in Claude Code');
+  console.log('='.repeat(52));
+  console.log(`Sessions: ${m.sessions.toLocaleString()} | Streaks: ${s.length.toLocaleString()} | Median: ${med} | Max: ${max}`);
+
+  console.log('\nStreak length distribution:');
+  const maxTier = Math.max(...tiers.map(t => t.count));
+  for (const t of tiers) {
+    console.log(`  ${t.desc.padEnd(10)} ${bar(t.count, maxTier)}  ${String(t.pct).padStart(5)}%  (${t.count.toLocaleString()})`);
+  }
+
+  console.log(`\nStats: median ${med} | mean ${mean} | p90 ${p90} | p99 ${p99} | max ${max}`);
+
+  console.log('\nStreak breakers (which tool ends the run):');
+  const maxBreak = breakerList.length > 0 ? breakerList[0].count : 1;
+  for (const b of breakerList) {
+    console.log(`  ${b.tool.padEnd(20)} ${bar(b.count, maxBreak)}  ${String(b.pct).padStart(5)}%  (${b.count.toLocaleString()})`);
+  }
+
+  const sessMed = median(m.sessionLongest);
+  const sessMax = m.sessionLongest.length > 0 ? m.sessionLongest[m.sessionLongest.length - 1] : 0;
+  const sessP90 = percentile(m.sessionLongest, 0.9);
+  console.log(`\nLongest streak per session: median ${sessMed} | p90 ${sessP90} | max ${sessMax}`);
   console.log('');
 }
 
-// Burnout warnings
-if (burnoutLevel >= 3) {
-  console.log(`  ${C.red}${C.bold}⚠ BURNOUT RISK: ${daysSinceRest} days without a break${C.reset}`);
-  console.log(`  ${C.red}  Seriously. Take a day off. Your AI will manage.${C.reset}`);
-} else if (burnoutLevel >= 2) {
-  console.log(`  ${C.orange}${C.bold}⚠ ${daysSinceRest} days without a break.${C.reset}`);
-  console.log(`  ${C.orange}  Consider scheduling a rest day.${C.reset}`);
-} else if (burnoutLevel >= 1) {
-  console.log(`  ${C.yellow}ℹ ${daysSinceRest} days since last rest day.${C.reset}`);
+const args = process.argv.slice(2);
+const isJson = args.includes('--json');
+
+const dataDir = resolve(process.env.HOME || '~', '.claude', 'projects');
+const files = findJsonlFiles(dataDir);
+
+if (files.length === 0) {
+  console.error('No .jsonl files found in ~/.claude/projects/');
+  process.exit(1);
 }
 
-console.log('');
+const rawResults = await processFiles(files);
+const merged = mergeResults(rawResults);
+renderOutput(merged, isJson);
