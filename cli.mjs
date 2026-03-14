@@ -213,3 +213,12 @@ if (files.length === 0) {
 const rawResults = await processFiles(files);
 const merged = mergeResults(rawResults);
 renderOutput(merged, isJson);
+
+if (!isJson) {
+  const dim = process.stdout.isTTY ? '\x1b[2m' : '';
+  const reset = process.stdout.isTTY ? '\x1b[0m' : '';
+  console.log();
+  console.log(`  ${dim}Running Claude Code autonomously? Check your safety score:${reset}`);
+  console.log(`  ${dim}npx cc-health-check${reset}`);
+  console.log(`  ${dim}Full production kit: https://yurukusa.gumroad.com/l/pkbbl?utm_source=npm&utm_medium=cli&utm_campaign=ops-kit${reset}`);
+}
