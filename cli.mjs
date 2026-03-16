@@ -220,5 +220,5 @@ if (!isJson) {
   console.log();
   console.log(`  ${dim}Running Claude Code autonomously? Check your safety score:${reset}`);
   console.log(`  ${dim}npx cc-health-check${reset}`);
-  console.log(`  ${dim}Full production kit: https://yurukusa.gumroad.com/l/pkbbl?utm_source=npm&utm_medium=cli&utm_campaign=ops-kit${reset}`);
+  console.log(`  ${dim}Full production kit: https://yurukusa.gumroad.com/l/cc-codex-ops-kit?utm_source=npm&utm_medium=cli&utm_campaign=ops-kit${reset}`);
 }
