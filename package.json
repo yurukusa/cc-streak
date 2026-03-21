@@ -1,6 +1,6 @@
 {
   "name": "@yurukusa/cc-streak",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "description": "How long can Claude Code go without an error? Median 12 successful tool calls between errors. Longest streak: 829. Bash breaks 52% of streaks.",
   "type": "module",
   "bin": {
@@ -10,8 +10,16 @@
     "start": "node cli.mjs"
   },
   "keywords": [
-    "claude", "claude-code", "anthropic", "cli", "productivity",
-    "ai", "developer-tools", "session-analysis", "streaks", "reliability"
+    "claude",
+    "claude-code",
+    "anthropic",
+    "cli",
+    "productivity",
+    "ai",
+    "developer-tools",
+    "session-analysis",
+    "streaks",
+    "reliability"
   ],
   "author": "yurukusa",
   "license": "MIT",
