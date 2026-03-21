@@ -51,4 +51,4 @@ Open [cc-streak](https://yurukusa.github.io/cc-streak/) and drop your `~/.claude
 
 ### Want to optimize how Claude Code uses its tools?
 
-**[Claude Code Ops Kit](https://yurukusa.github.io/cc-ops-kit-landing/?utm_source=github&utm_medium=readme&utm_campaign=cc-streak)** ($19) — 10 production hooks + 5 templates + 3 tools. Built from 160+ hours of autonomous operation.
+**[Claude Code Ops Kit](https://yurukusa.github.io/cc-ops-kit-landing/?utm_source=github&utm_medium=readme&utm_campaign=cc-streak)** ($19) — 16 production hooks + 5 templates + 3 tools. Built from 160+ hours of autonomous operation.
